@@ -1,0 +1,344 @@
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script><!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gamified Impact Scoreboard Dashboard</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Chart.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- Confetti.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.5.1/dist/confetti.browser.min.js"></script>
+  <style>
+    body { font-family: 'Inter', sans-serif; }
+    canvas { max-width: 100%; width: 100%; max-height: 300px; }
+    .chart-container { max-width: 100%; margin: 0 auto; }
+    .badge { display: inline-block; padding: 0.2rem 0.4rem; border-radius: 0.25rem; font-size: 0.65rem; font-weight: bold; }
+    .green-champion { background-color: #4CAF50; color: white; }
+    .eco-warrior { background-color: #FF5722; color: white; }
+    .sustainability-star { background-color: #2196F3; color: white; }
+    .streak-badge { background-color: #FFD700; color: black; }
+    .progress-bar { height: 8px; background-color: #e5e7eb; border-radius: 4px; overflow: hidden; }
+    .progress-fill { height: 100%; transition: width 2s ease-in-out; }
+    .circular-progress { position: relative; width: 120px; height: 120px; }
+    .circular-progress svg { transform: rotate(-90deg); }
+    .progress-circle { fill: none; stroke-width: 8; }
+    .progress-bg { stroke: #000000; }
+    .progress-fg { stroke: #000000; stroke-linecap: round; }
+    .sparkle { position: absolute; width: 8px; height: 8px; background: gold; border-radius: 50%; opacity: 0.7; animation: sparkle 1s infinite; }
+    @keyframes sparkle { 0% { transform: scale(1); opacity: 0.7; } 100% { transform: scale(0); opacity: 0; } }
+    tr:hover { background-color: #f1f5f9; transition: background-color 0.3s; }
+    table { table-layout: auto; }
+    .pulse-glow { animation: pulse 2s infinite; }
+    @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(76, 175, 80, 0.4); } 70% { box-shadow: 0 0 0 10px rgba(76, 175, 80, 0); } 100% { box-shadow: 0 0 0 0 rgba(76, 175, 80, 0); } }
+    .wave-bg { background: linear-gradient(to right, #4CAF50 0%, #4CAF50 50%, #ffffff 50%, #ffffff 100%); background-size: 200% 100%; animation: wave 5s infinite; }
+    @keyframes wave { 0% { background-position: 200% 0; } 100% { background-position: 0 0; } }
+    .counter { transition: all 2s ease-in-out; }
+  </style>
+</head>
+<body class="bg-gradient-to-r from-green-100 to-blue-100 min-h-screen flex items-center">
+  <div class="container mx-auto p-4">
+    <h1 class="text-3xl font-extrabold text-center mb-4 text-green-800">🌿 Sustainable Choices Scoreboard 🌟</h1>
+    <p class="text-center text-gray-700 mb-6 text-sm">Compete to choose sustainable suppliers and artisans, reducing Saivana’s carbon footprint!</p>
+
+    <!-- Dashboard Content -->
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <!-- Bar Chart: Sustainability Scores -->
+      <div class="bg-white p-2 rounded-lg shadow-lg">
+        <h2 class="text-lg font-semibold mb-2 text-gray-800">Team Sustainability Scores</h2>
+        <div class="chart-container">
+          <canvas id="teamScoresChart"></canvas>
+        </div>
+      </div>
+
+      <!-- Line Chart: Increase in Sustainable Suppliers -->
+      <div class="bg-white p-2 rounded-lg shadow-lg">
+        <h2 class="text-lg font-semibold mb-2 text-gray-800">Growth in Sustainable Suppliers</h2>
+        <div class="chart-container">
+          <canvas id="supplierGrowthChart"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- Leaderboard Table -->
+    <div class="mt-4 bg-white p-4 rounded-lg shadow-lg overflow-x-auto">
+      <h2 class="text-lg font-semibold mb-3 text-gray-800">Leaderboard 🏆</h2>
+      <table class="w-full text-sm border-collapse">
+        <thead>
+          <tr class="bg-green-200">
+            <th class="p-2">Rank</th>
+            <th class="p-2">Team</th>
+            <th class="p-2">Suppliers</th>
+            <th class="p-2">Artisans</th>
+            <th class="p-2">CO₂ Saved</th>
+            <th class="p-2">Score</th>
+            <th class="p-2">Progress</th>
+            <th class="p-2">Badges</th>
+          </tr>
+        </thead>
+        <tbody id="leaderboardTable"></tbody>
+      </table>
+    </div>
+
+    <!-- Total Impact -->
+    <div class="mt-4 bg-green-50 p-3 rounded-lg shadow-lg text-center min-h-fit">
+      <h2 class="text-lg font-semibold mb-2 text-gray-800">Total Impact 🌍</h2>
+      <div class="flex flex-col justify-center items-center gap-2 space-y-2">
+        <!-- Progress Meter and CO2 Saved -->
+        <div class="flex flex-col sm:flex-row justify-center items-center gap-4">
+          <div class="circular-progress mx-auto">
+            <svg width="120" height="120">
+              <circle class="progress-bg" cx="60" cy="60" r="56"></circle>
+              <circle id="progressCircle" class="progress-fg" cx="60" cy="60" r="56"></circle>
+            </svg>
+            <div class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-center">
+              <p id="progressPercent" class="text-base font-bold text-white" style="text-shadow: 0 0 4px #000;">100%</p>
+              <p class="text-xs text-gray-200">of 58 MT Goal</p>
+            </div>
+            <div class="sparkle" style="top: 15px; left: 25px;"></div>
+            <div class="sparkle" style="top: 100px; left: 30px;"></div>
+            <div class="sparkle" style="top: 20px; right: 15px;"></div>
+          </div>
+          <div class="bg-white p-4 rounded-lg shadow-lg pulse-glow flex items-center">
+            <span class="text-2xl mr-3">🌱</span>
+            <div>
+              <p class="font-semibold text-sm">Total CO₂ Saved</p>
+              <p id="totalCO2" class="text-2xl font-bold text-green-800 counter">0 MT</p>
+            </div>
+          </div>
+        </div>
+        <p class="text-xs text-gray-600">Minimum 5% CO₂ goal (58 MT) achieved! Total savings: 495 MT</p>
+        <!-- Sustainable Choices -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 flex-wrap">
+          <div class="bg-white p-3 rounded-lg shadow-lg flex items-center">
+            <span class="text-xl mr-2">🏭</span>
+            <div>
+              <p class="font-semibold text-sm">Sustainable Suppliers</p>
+              <p id="totalSuppliers" class="text-lg font-bold counter">0</p>
+            </div>
+          </div>
+          <div class="bg-white p-3 rounded-lg shadow-lg flex items-center">
+            <span class="text-xl mr-2">🧵</span>
+            <div>
+              <p class="font-semibold text-sm">Artisans Chosen</p>
+              <p id="totalArtisans" class="text-lg font-bold counter">0</p>
+            </div>
+          </div>
+        </div>
+        <!-- Top Team Banner -->
+        <div class="bg-yellow-100 p-3 rounded-lg flex items-center justify-center relative w-full">
+          <span class="text-xl mr-2">🏆</span>
+          <p id="topTeamBanner" class="text-base font-semibold text-gray-800"></p>
+          <div class="sparkle" style="top: 5px; left: 10px;"></div>
+          <div class="sparkle" style="top: 5px; right: 10px;"></div>
+        </div>
+        <!-- Motivational Message -->
+        <div class="bg-white p-3 rounded-lg shadow-lg wave-bg w-full">
+          <p class="text-sm text-gray-700">Your choices are helping Saivana reduce its 1,161 MT CO₂ footprint by 5-10% by 2025-26, one sustainable step at a time! 🚀</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Sample data for teams (unchanged for leaderboard/charts)
+    const teams = [
+      { name: "Team Rais", sustainableSuppliers: 6, artisans: 4, supplierRank: 3, artisanRank: 2 },
+      { name: "Team Archana", sustainableSuppliers: 8, artisans: 3, supplierRank: 2, artisanRank: 3 },
+      { name: "Team Sagrika", sustainableSuppliers: 5, artisans: 5, supplierRank: 4, artisanRank: 2 },
+      { name: "Team Reena", sustainableSuppliers: 7, artisans: 2, supplierRank: 3, artisanRank: 3 },
+      { name: "Team Haricharan", sustainableSuppliers: 4, artisans: 6, supplierRank: 4, artisanRank: 1 },
+      { name: "Team Mukesh", sustainableSuppliers: 9, artisans: 1, supplierRank: 2, artisanRank: 4 }
+    ];
+
+    // Sample quarterly supplier growth data (unchanged)
+    const supplierGrowth = {
+      "Q1": [4, 5, 3, 5, 2, 6],
+      "Q2": [5, 6, 4, 6, 3, 7],
+      "Q3": [5, 7, 4, 6, 3, 8],
+      "Q4": [6, 8, 5, 7, 4, 9]
+    };
+
+    // Calculate CO2 savings and sustainability score
+    teams.forEach(team => {
+      const co2PerSupplier = 12 - ((team.supplierRank - 1) * 1);
+      const co2PerArtisan = 12 - ((team.artisanRank - 1) * 1);
+      team.co2Saved = (team.sustainableSuppliers * co2PerSupplier) + (team.artisans * co2PerArtisan);
+      const supplierScore = ((10 - team.supplierRank) / 10) * team.sustainableSuppliers;
+      const artisanScore = ((10 - team.artisanRank) / 10) * team.artisans;
+      team.score = (0.6 * supplierScore * 10) + (0.4 * artisanScore * 10);
+    });
+
+    // Sort teams by score for ranking
+    const sortedTeams = [...teams].sort((a, b) => b.score - a.score);
+
+    // Assign badges
+    const topTeam = sortedTeams[0];
+    const maxArtisans = Math.max(...teams.map(t => t.artisans));
+    const ecoWarriorTeam = teams.find(t => t.artisans === maxArtisans);
+    const sustainabilityStars = teams.filter(t => t.co2Saved > 50);
+    const streakTeams = teams.filter(t => t.artisans >= 3);
+
+    teams.forEach(team => {
+      team.badges = [];
+      if (team === topTeam) team.badges.push({ name: "Green Champion", class: "green-champion" });
+      if (team === ecoWarriorTeam) team.badges.push({ name: "Eco Warrior", class: "eco-warrior" });
+      if (sustainabilityStars.includes(team)) team.badges.push({ name: "Sustainability Star", class: "sustainability-star" });
+      if (streakTeams.includes(team)) team.badges.push({ name: "Streak", class: "streak-badge" });
+    });
+
+    // Team-specific confetti colors
+    const teamConfettiColors = {
+      "Team Rais": ["#FF5722"],
+      "Team Archana": ["#2196F3"],
+      "Team Sagrika": ["#FFC107"],
+      "Team Reena": ["#9C27B0"],
+      "Team Haricharan": ["#00BCD4"],
+      "Team Mukesh": ["#4CAF50"]
+    };
+
+    // Trigger confetti for top team (Total Impact)
+    setTimeout(() => {
+      confetti({
+        particleCount: 150,
+        spread: 80,
+        colors: teamConfettiColors["Team Haricharan"],
+        origin: { y: 0.8 }
+      });
+    }, 1000);
+
+    // Animated counter function
+    function animateCounter(element, start, end, duration, suffix = "") {
+      let startTime = null;
+      function step(timestamp) {
+        if (!startTime) startTime = timestamp;
+        const progress = Math.min((timestamp - startTime) / duration, 1);
+        const value = Math.floor(progress * (end - start) + start);
+        element.textContent = `${value}${suffix}`;
+        if (progress < 1) requestAnimationFrame(step);
+      }
+      requestAnimationFrame(step);
+    }
+
+    // Bar Chart: Sustainability Scores
+    const teamScoresChart = new Chart(document.getElementById("teamScoresChart"), {
+      type: "bar",
+      data: {
+        labels: teams.map(t => t.name),
+        datasets: [{
+          label: "Sustainability Score",
+          data: teams.map(t => t.score),
+          backgroundColor: ["#4CAF50", "#2196F3", "#FF5722", "#FFC107", "#9C27B0", "#00BCD4"],
+          borderWidth: 1
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: {
+          y: { beginAtZero: true, max: 100, title: { display: true, text: "Score (0-100)" } }
+        },
+        plugins: { legend: { display: false } },
+        animation: { duration: 1500 }
+      }
+    });
+
+    // Line Chart: Supplier Growth
+    const supplierGrowthChart = new Chart(document.getElementById("supplierGrowthChart"), {
+      type: "line",
+      data: {
+        labels: ["Q1", "Q2", "Q3", "Q4"],
+        datasets: teams.map((team, idx) => ({
+          label: team.name,
+          data: Object.values(supplierGrowth).map(quarter => quarter[idx]),
+          borderColor: ["#4CAF50", "#2196F3", "#FF5722", "#FFC107", "#9C27B0", "#00BCD4"][idx],
+          fill: false,
+          tension: 0.3
+        }))
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: {
+          y: { beginAtZero: true, title: { display: true, text: "Sustainable Suppliers" } }
+        },
+        plugins: { legend: { position: "bottom", labels: { font: { size: 10 } } } },
+        animation: { duration: 1500 }
+      }
+    });
+
+    // Populate Leaderboard Table
+    const leaderboardTable = document.getElementById("leaderboardTable");
+    sortedTeams.forEach((team, index) => {
+      const row = document.createElement("tr");
+      row.innerHTML = `
+        <td class="p-2">${index + 1}</td>
+        <td class="p-2">${team.name}</td>
+        <td class="p-2">${team.sustainableSuppliers}</td>
+        <td class="p-2">${team.artisans}</td>
+        <td class="p-2">${team.co2Saved}</td>
+        <td class="p-2">${team.score.toFixed(1)}</td>
+        <td class="p-2"><div class="progress-bar"><div class="progress-fill bg-green-500" style="width: ${team.score}%"></div></div></td>
+        <td class="p-2">${team.badges.map(b => `<span class="badge ${b.class}">${b.name}</span>`).join(" ")}</td>
+      `;
+      leaderboardTable.appendChild(row);
+    });
+
+    // Update Total Impact with provided data
+    const totalCO2Saved = 495;
+    const totalSuppliers = 39;
+    const totalArtisans = 21;
+    const co2Goal = 58;
+    const progressPercent = Math.min((totalCO2Saved / co2Goal) * 100, 100);
+    animateCounter(document.getElementById("totalCO2"), 0, totalCO2Saved, 2000, " MT");
+    animateCounter(document.getElementById("totalSuppliers"), 0, totalSuppliers, 2000);
+    animateCounter(document.getElementById("totalArtisans"), 0, totalArtisans, 2000);
+    document.getElementById("progressPercent").textContent = `${progressPercent.toFixed(1)}%`;
+    document.getElementById("topTeamBanner").textContent = `Team Haricharan is the Green Champion with a score of 82.0! 🎉`;
+    const progressCircle = document.getElementById("progressCircle");
+    const circumference = 2 * Math.PI * 56;
+    progressCircle.style.strokeDasharray = circumference;
+    progressCircle.style.strokeDashoffset = circumference * (1 - progressPercent / 100);
+  </script>
+</body>
+</html>
